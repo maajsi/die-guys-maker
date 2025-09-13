@@ -38,8 +38,10 @@ interface NFTCreatorState {
 type NFTCreatorAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_AVAILABLE_ASSETS'; payload: Record<string, Asset[]> }
+  | { type: 'SET_SELECTED_ASSETS'; payload: Record<string, string> }
   | { type: 'RANDOMIZE_TRAITS' }
   | { type: 'CHANGE_TYPE'; payload: number }
+  | { type: 'CHANGE_TYPE_COMPLETE'; payload: { typeIndex: number; availableAssets: Record<string, Asset[]>; selectedAssets: Record<string, string> } }
   | { type: 'SELECT_TRAIT'; payload: { layer: string; assetPath: string } }
   | { type: 'UPDATE_TEXT'; payload: Partial<TextSettings> }
   | { type: 'SET_GENERATING'; payload: boolean }
@@ -163,6 +165,9 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
     case 'SET_AVAILABLE_ASSETS':
       return { ...state, availableAssets: action.payload };
     
+    case 'SET_SELECTED_ASSETS':
+      return { ...state, selectedAssets: action.payload };
+    
     case 'RANDOMIZE_TRAITS': {
       if (state.isGenerating || Object.keys(state.availableAssets).length === 0) {
         return state;
@@ -199,6 +204,15 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
         generationCount: state.generationCount + 1
       };
     }
+    
+    case 'CHANGE_TYPE_COMPLETE':
+      return {
+        ...state,
+        type: action.payload.typeIndex,
+        availableAssets: action.payload.availableAssets,
+        selectedAssets: action.payload.selectedAssets,
+        generationCount: state.generationCount + 1
+      };
     
     case 'SELECT_TRAIT':
       return { 
@@ -425,7 +439,7 @@ export default function NFTCreator() {
     } finally {
       dispatch({ type: 'SET_RENDERING', payload: false });
     }
-  }, [layers, state.isRendering]);
+  }, [layers, state.isRendering, state.selectedAssets, state.textSettings]);
 
   // Generate random NFT - clean and simple
   const generateRandomNFT = useCallback(async () => {
@@ -433,19 +447,23 @@ export default function NFTCreator() {
       return;
     }
     
-    dispatch({ type: 'RANDOMIZE_TRAITS' });
+    dispatch({ type: 'SET_GENERATING', payload: true });
     
-    // Wait a bit for state to update, then render
-    setTimeout(async () => {
-      const newAssets = generateRandomTraits(state.availableAssets);
-      await renderNFT(newAssets);
-      dispatch({ type: 'SET_GENERATING', payload: false });
-      
-      // Generate and set story
-      const story = generateNFTStory(newAssets);
-      dispatch({ type: 'SET_STORY', payload: story });
-    }, 0);
-  }, [state.availableAssets, state.isGenerating]);
+    const newAssets = generateRandomTraits(state.availableAssets);
+    
+    // Update selected assets immediately
+    dispatch({ type: 'SET_SELECTED_ASSETS', payload: newAssets });
+    
+    // Render with new assets
+    await renderNFT(newAssets);
+    
+    // Generate and set story
+    const story = generateNFTStory(newAssets);
+    dispatch({ type: 'SET_STORY', payload: story });
+    
+    dispatch({ type: 'INCREMENT_GENERATION_COUNT' });
+    dispatch({ type: 'SET_GENERATING', payload: false });
+  }, [state.availableAssets, state.isGenerating, renderNFT, generateNFTStory]);
 
   // Save to favorites
   const addToFavorites = () => {
@@ -484,7 +502,7 @@ export default function NFTCreator() {
   };
 
   // Handle type change - fixed to wait for assets
-  const handleTypeChange = useCallback((direction: number) => {
+  const handleTypeChange = useCallback(async (direction: number) => {
     console.log('handleTypeChange called, direction:', direction);
     
     if (state.isGenerating || state.isRendering) {
@@ -495,26 +513,34 @@ export default function NFTCreator() {
     const newIndex = (state.type + direction + NFT_TYPES.length) % NFT_TYPES.length;
     console.log('Changing to type index:', newIndex, 'type:', NFT_TYPES[newIndex]);
     
-    dispatch({ type: 'CHANGE_TYPE', payload: newIndex });
+    dispatch({ type: 'SET_GENERATING', payload: true });
     
-    // Wait for state to update, then render
-    setTimeout(async () => {
-      const newType = NFT_TYPES[newIndex];
-      const newLayers = LAYER_NAMES[newType as keyof typeof LAYER_NAMES];
-      const newAvailableAssets: Record<string, Asset[]> = {};
-      newLayers.forEach(layer => {
-        newAvailableAssets[layer] = getAssets(newType, layer);
-      });
-      
-      const newAssets = generateRandomTraits(newAvailableAssets);
-      await renderNFT(newAssets);
-      dispatch({ type: 'SET_GENERATING', payload: false });
-      
-      // Generate and set story
-      const story = generateNFTStory(newAssets);
-      dispatch({ type: 'SET_STORY', payload: story });
-    }, 0);
-  }, [state.type, state.isGenerating, state.isRendering]);
+    const newType = NFT_TYPES[newIndex];
+    const newLayers = LAYER_NAMES[newType as keyof typeof LAYER_NAMES];
+    const newAvailableAssets: Record<string, Asset[]> = {};
+    newLayers.forEach(layer => {
+      newAvailableAssets[layer] = getAssets(newType, layer);
+    });
+    
+    const newAssets = generateRandomTraits(newAvailableAssets);
+    
+    // Update all state immediately
+    dispatch({ type: 'CHANGE_TYPE_COMPLETE', payload: { 
+      typeIndex: newIndex, 
+      availableAssets: newAvailableAssets, 
+      selectedAssets: newAssets 
+    }});
+    
+    // Render with new assets
+    await renderNFT(newAssets);
+    
+    // Generate and set story
+    const story = generateNFTStory(newAssets);
+    dispatch({ type: 'SET_STORY', payload: story });
+    
+    dispatch({ type: 'INCREMENT_GENERATION_COUNT' });
+    dispatch({ type: 'SET_GENERATING', payload: false });
+  }, [state.type, state.isGenerating, state.isRendering, renderNFT, generateNFTStory]);
 
   // Initial generation on page load only
   useEffect(() => {
@@ -525,6 +551,10 @@ export default function NFTCreator() {
         dispatch({ type: 'SET_GENERATING', payload: true });
         
         const newAssets = generateRandomTraits(state.availableAssets);
+        
+        // Update selected assets first
+        dispatch({ type: 'SET_SELECTED_ASSETS', payload: newAssets });
+        
         await renderNFT(newAssets);
         
         const story = generateNFTStory(newAssets);
@@ -547,15 +577,21 @@ export default function NFTCreator() {
       
       generateInitialNFT();
     }
-  }, [state.availableAssets]);
+  }, [state.availableAssets, renderNFT, generateNFTStory]);
 
-  // Re-render when text settings change
-  useEffect(() => {
-    if (Object.keys(state.selectedAssets).length > 0) {
-      console.log('Text settings changed, re-rendering NFT');
-      renderNFT();
+  // Text inputs with onChange that triggers immediate re-render
+  const handleTextChange = useCallback((field: keyof TextSettings, value: string | number) => {
+    dispatch({ type: 'UPDATE_TEXT', payload: { [field]: value } });
+    
+    // Immediate re-render with updated text
+    if (Object.keys(state.selectedAssets).length > 0 && !state.isRendering) {
+      const newTextSettings = { ...state.textSettings, [field]: value };
+      console.log('Text changed, re-rendering NFT immediately');
+      setTimeout(() => {
+        renderNFT(state.selectedAssets);
+      }, 0);
     }
-  }, [state.textSettings, state.selectedAssets]);
+  }, [state.selectedAssets, state.isRendering, state.textSettings, renderNFT]);
 
   // Download NFT
   const downloadNFT = () => {
@@ -569,15 +605,16 @@ export default function NFTCreator() {
   };
 
   // Select asset - simplified
-  const selectAsset = async (asset: Asset) => {
+  const selectAsset = useCallback(async (asset: Asset) => {
     console.log('Selecting asset:', asset);
-    
-    dispatch({ type: 'SELECT_TRAIT', payload: { layer: asset.category, assetPath: asset.path } });
     
     const newAssets = {
       ...state.selectedAssets,
       [asset.category]: asset.path
     };
+    
+    // Update state immediately
+    dispatch({ type: 'SELECT_TRAIT', payload: { layer: asset.category, assetPath: asset.path } });
     
     console.log('New assets after selection:', newAssets);
     await renderNFT(newAssets);
@@ -585,7 +622,7 @@ export default function NFTCreator() {
     // Generate and set story
     const story = generateNFTStory(newAssets);
     dispatch({ type: 'SET_STORY', payload: story });
-  };
+  }, [state.selectedAssets, renderNFT, generateNFTStory]);
 
   // Get current asset name
   const getCurrentAssetName = (layer: string): string => {
@@ -885,7 +922,7 @@ export default function NFTCreator() {
                   type="text"
                   placeholder="Top Text"
                   value={state.textSettings.topText}
-                  onChange={(e) => dispatch({ type: 'UPDATE_TEXT', payload: { topText: e.target.value } })}
+                  onChange={(e) => handleTextChange('topText', e.target.value)}
                   className="input-field"
                 />
 
@@ -893,7 +930,7 @@ export default function NFTCreator() {
                   type="text"
                   placeholder="Bottom Text"
                   value={state.textSettings.bottomText}
-                  onChange={(e) => dispatch({ type: 'UPDATE_TEXT', payload: { bottomText: e.target.value } })}
+                  onChange={(e) => handleTextChange('bottomText', e.target.value)}
                   className="input-field"
                 />
 
@@ -902,7 +939,7 @@ export default function NFTCreator() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Font Style</label>
                     <select
                       value={state.textSettings.preset}
-                      onChange={(e) => dispatch({ type: 'UPDATE_TEXT', payload: { preset: e.target.value } })}
+                      onChange={(e) => handleTextChange('preset', e.target.value)}
                       className="input-field"
                     >
                       {FONT_PRESETS.map((preset) => (
@@ -917,7 +954,7 @@ export default function NFTCreator() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Font Size</label>
                     <select
                       value={state.textSettings.fontSize}
-                      onChange={(e) => dispatch({ type: 'UPDATE_TEXT', payload: { fontSize: parseInt(e.target.value) } })}
+                      onChange={(e) => handleTextChange('fontSize', parseInt(e.target.value))}
                       className="input-field"
                     >
                       <option value={24}>Small (24px)</option>
@@ -951,13 +988,19 @@ export default function NFTCreator() {
                 {/* Quick Actions */}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => dispatch({ type: 'UPDATE_TEXT', payload: { topText: 'DIE GUYS', bottomText: 'NFT' } })}
+                    onClick={() => {
+                      dispatch({ type: 'UPDATE_TEXT', payload: { topText: 'DIE GUYS', bottomText: 'NFT' } });
+                      setTimeout(() => renderNFT(state.selectedAssets), 0);
+                    }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
                     Sample Text
                   </button>
                   <button
-                    onClick={() => dispatch({ type: 'UPDATE_TEXT', payload: { topText: '', bottomText: '' } })}
+                    onClick={() => {
+                      dispatch({ type: 'UPDATE_TEXT', payload: { topText: '', bottomText: '' } });
+                      setTimeout(() => renderNFT(state.selectedAssets), 0);
+                    }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
                     Clear Text
@@ -987,7 +1030,7 @@ export default function NFTCreator() {
                   <button
                     onClick={() => {
                       const story = generateNFTStory();
-                      setNftStory(story);
+                      dispatch({ type: 'SET_STORY', payload: story });
                     }}
                     className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 hover:scale-105"
                   >
@@ -1061,7 +1104,7 @@ export default function NFTCreator() {
                   key={index}
                   onClick={() => selectAsset(asset)}
                   className={`asset-item p-3 lg:p-4 text-center cursor-pointer transition-all duration-500 hover:scale-102 group ${
-                    selectedAssets[asset.category] === asset.path ? 'selected' : ''
+                    state.selectedAssets[asset.category] === asset.path ? 'selected' : ''
                   }`}
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
