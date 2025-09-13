@@ -425,7 +425,7 @@ export default function NFTCreator() {
     } finally {
       dispatch({ type: 'SET_RENDERING', payload: false });
     }
-  }, [layers, state.textSettings, state.selectedAssets, state.isRendering]);
+  }, [layers, state.isRendering]);
 
   // Generate random NFT - clean and simple
   const generateRandomNFT = useCallback(async () => {
@@ -445,7 +445,7 @@ export default function NFTCreator() {
       const story = generateNFTStory(newAssets);
       dispatch({ type: 'SET_STORY', payload: story });
     }, 0);
-  }, [state.availableAssets, state.isGenerating, renderNFT, generateNFTStory]);
+  }, [state.availableAssets, state.isGenerating]);
 
   // Save to favorites
   const addToFavorites = () => {
@@ -514,7 +514,7 @@ export default function NFTCreator() {
       const story = generateNFTStory(newAssets);
       dispatch({ type: 'SET_STORY', payload: story });
     }, 0);
-  }, [state.type, state.isGenerating, state.isRendering, renderNFT, generateNFTStory]);
+  }, [state.type, state.isGenerating, state.isRendering]);
 
   // Initial generation on page load only
   useEffect(() => {
@@ -547,7 +547,7 @@ export default function NFTCreator() {
       
       generateInitialNFT();
     }
-  }, [state.availableAssets, renderNFT, generateNFTStory]);
+  }, [state.availableAssets]);
 
   // Re-render when text settings change
   useEffect(() => {
@@ -555,7 +555,7 @@ export default function NFTCreator() {
       console.log('Text settings changed, re-rendering NFT');
       renderNFT();
     }
-  }, [state.textSettings, renderNFT, state.selectedAssets]);
+  }, [state.textSettings, state.selectedAssets]);
 
   // Download NFT
   const downloadNFT = () => {
