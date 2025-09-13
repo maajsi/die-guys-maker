@@ -135,7 +135,7 @@ const generateRandomTraits = (availableAssets: Record<string, Asset[]>): Record<
 };
 
 // Helper functions for localStorage
-const loadFromStorage = (key: string, defaultValue: any) => {
+const loadFromStorage = (key: string, defaultValue: unknown): unknown => {
   if (typeof window === 'undefined') return defaultValue;
   try {
     const item = localStorage.getItem(key);
@@ -146,7 +146,7 @@ const loadFromStorage = (key: string, defaultValue: any) => {
   }
 };
 
-const saveToStorage = (key: string, value: any) => {
+const saveToStorage = (key: string, value: unknown): void => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -166,8 +166,8 @@ const initialState: MemeCreatorState = {
     fontSize: 32,
     preset: 'Bold Impact'
   },
-  generationCount: loadFromStorage('die-guys-generation-count', 0),
-  favorites: loadFromStorage('die-guys-favorites', []),
+  generationCount: loadFromStorage('die-guys-generation-count', 0) as number,
+  favorites: loadFromStorage('die-guys-favorites', []) as string[],
   isLoading: true,
   isGenerating: false,
   isRendering: false,
