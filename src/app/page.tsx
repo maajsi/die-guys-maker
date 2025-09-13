@@ -17,9 +17,9 @@ interface TextSettings {
   preset: string;
 }
 
-// NFT Creator State Interface
-interface NFTCreatorState {
-  type: number; // NFT type index
+// Meme Creator State Interface
+interface MemeCreatorState {
+  type: number; // Meme type index
   selectedAssets: Record<string, string>; // layer -> asset path
   availableAssets: Record<string, Asset[]>; // layer -> available assets
   textSettings: TextSettings;
@@ -28,14 +28,14 @@ interface NFTCreatorState {
   isLoading: boolean;
   isGenerating: boolean;
   isRendering: boolean;
-  nftStory: string;
+  memeStory: string;
   selectedLayer: string;
   showModal: boolean;
   showStats: boolean;
 }
 
 // Action Types
-type NFTCreatorAction =
+type MemeCreatorAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_AVAILABLE_ASSETS'; payload: Record<string, Asset[]> }
   | { type: 'SET_SELECTED_ASSETS'; payload: Record<string, string> }
@@ -134,8 +134,29 @@ const generateRandomTraits = (availableAssets: Record<string, Asset[]>): Record<
   return newSelection;
 };
 
+// Helper functions for localStorage
+const loadFromStorage = (key: string, defaultValue: any) => {
+  if (typeof window === 'undefined') return defaultValue;
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch (error) {
+    console.warn(`Failed to load ${key} from localStorage:`, error);
+    return defaultValue;
+  }
+};
+
+const saveToStorage = (key: string, value: any) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.warn(`Failed to save ${key} to localStorage:`, error);
+  }
+};
+
 // Initial state
-const initialState: NFTCreatorState = {
+const initialState: MemeCreatorState = {
   type: 0,
   selectedAssets: {},
   availableAssets: {},
@@ -145,19 +166,19 @@ const initialState: NFTCreatorState = {
     fontSize: 32,
     preset: 'Bold Impact'
   },
-  generationCount: 0,
-  favorites: [],
+  generationCount: loadFromStorage('die-guys-generation-count', 0),
+  favorites: loadFromStorage('die-guys-favorites', []),
   isLoading: true,
   isGenerating: false,
   isRendering: false,
-  nftStory: '',
+  memeStory: '',
   selectedLayer: '',
   showModal: false,
   showStats: false,
 };
 
 // State reducer
-const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NFTCreatorState => {
+const memeCreatorReducer = (state: MemeCreatorState, action: MemeCreatorAction): MemeCreatorState => {
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
@@ -173,11 +194,13 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
         return state;
       }
       const newAssets = generateRandomTraits(state.availableAssets);
+      const newGenerationCount = state.generationCount + 1;
+      saveToStorage('die-guys-generation-count', newGenerationCount);
       return { 
         ...state, 
         selectedAssets: newAssets,
         isGenerating: true,
-        generationCount: state.generationCount + 1
+        generationCount: newGenerationCount
       };
     }
     
@@ -194,6 +217,8 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
       
       // Generate random traits for new type
       const newAssets = generateRandomTraits(newAvailableAssets);
+      const newGenerationCount = state.generationCount + 1;
+      saveToStorage('die-guys-generation-count', newGenerationCount);
       
       return {
         ...state,
@@ -201,17 +226,19 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
         availableAssets: newAvailableAssets,
         selectedAssets: newAssets,
         isGenerating: true,
-        generationCount: state.generationCount + 1
+        generationCount: newGenerationCount
       };
     }
     
     case 'CHANGE_TYPE_COMPLETE':
+      const newGenCount = state.generationCount + 1;
+      saveToStorage('die-guys-generation-count', newGenCount);
       return {
         ...state,
         type: action.payload.typeIndex,
         availableAssets: action.payload.availableAssets,
         selectedAssets: action.payload.selectedAssets,
-        generationCount: state.generationCount + 1
+        generationCount: newGenCount
       };
     
     case 'SELECT_TRAIT':
@@ -237,16 +264,28 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
       return { ...state, isRendering: action.payload };
     
     case 'INCREMENT_GENERATION_COUNT':
-      return { ...state, generationCount: state.generationCount + 1 };
+      const incrementedCount = state.generationCount + 1;
+      saveToStorage('die-guys-generation-count', incrementedCount);
+      return { ...state, generationCount: incrementedCount };
     
     case 'ADD_FAVORITE':
-      return { 
-        ...state, 
-        favorites: [action.payload, ...state.favorites.slice(0, 4)]
+      const existingIndex = state.favorites.indexOf(action.payload);
+      let newFavorites: string[];
+      if (existingIndex !== -1) {
+        // Remove from favorites (toggle off)
+        newFavorites = state.favorites.filter((_, index) => index !== existingIndex);
+      } else {
+        // Add to favorites (toggle on), keeping only the most recent 4
+        newFavorites = [action.payload, ...state.favorites.slice(0, 3)];
+      }
+      saveToStorage('die-guys-favorites', newFavorites);
+      return {
+        ...state,
+        favorites: newFavorites
       };
     
     case 'SET_STORY':
-      return { ...state, nftStory: action.payload };
+      return { ...state, memeStory: action.payload };
     
     case 'SET_SELECTED_LAYER':
       return { ...state, selectedLayer: action.payload };
@@ -258,13 +297,15 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
       return { ...state, showStats: action.payload };
     
     case 'COMPLETE_INITIAL_GENERATION':
+      // Don't increment count for initial generation - just preserve existing count
+      // The count should only increment when user actively generates new memes
       return {
         ...state,
         selectedAssets: action.payload.assets,
-        nftStory: action.payload.story,
+        memeStory: action.payload.story,
         isGenerating: false,
-        isLoading: false,
-        generationCount: 1
+        isLoading: false
+        // generationCount remains unchanged - it was already loaded from localStorage
       };
     
     default:
@@ -272,8 +313,8 @@ const nftCreatorReducer = (state: NFTCreatorState, action: NFTCreatorAction): NF
   }
 };
 
-export default function NFTCreator() {
-  const [state, dispatch] = useReducer(nftCreatorReducer, initialState);
+export default function MemeCreator() {
+  const [state, dispatch] = useReducer(memeCreatorReducer, initialState);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasInitializedRef = useRef(false);
 
@@ -281,7 +322,7 @@ export default function NFTCreator() {
   const layers = LAYER_NAMES[currentType as keyof typeof LAYER_NAMES];
 
   // Generate Die Guys themed story
-  const generateNFTStory = useCallback((assets: Record<string, string> = state.selectedAssets) => {
+  const generateMemeStory = useCallback((assets: Record<string, string> = state.selectedAssets) => {
     if (Object.keys(assets).length === 0) return '';
 
     const getAssetName = (layer: string) => {
@@ -350,14 +391,14 @@ export default function NFTCreator() {
   }, [currentType, layers]);
 
   // Optimized render function - no flickering
-  const renderNFT = useCallback(async (assets: Record<string, string> = state.selectedAssets, textSettings: TextSettings = state.textSettings) => {
+  const renderMeme = useCallback(async (assets: Record<string, string> = state.selectedAssets, textSettings: TextSettings = state.textSettings) => {
     const canvas = canvasRef.current;
     if (!canvas || state.isRendering || Object.keys(assets).length === 0) {
       console.log('Skipping render - canvas:', !!canvas, 'isRendering:', state.isRendering, 'assets length:', Object.keys(assets).length);
       return;
     }
 
-    console.log('Rendering NFT with assets:', assets);
+    console.log('Rendering meme with assets:', assets);
     console.log('Rendering with text settings:', { topText: textSettings.topText, bottomText: textSettings.bottomText, fontSize: textSettings.fontSize, preset: textSettings.preset });
     dispatch({ type: 'SET_RENDERING', payload: true });
     
@@ -434,18 +475,18 @@ export default function NFTCreator() {
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(offscreenCanvas, 0, 0);
-        console.log('NFT rendered successfully');
+        console.log('Meme rendered successfully');
       }
       
     } catch (error) {
-      console.error('Failed to render NFT:', error);
+      console.error('Failed to render meme:', error);
     } finally {
       dispatch({ type: 'SET_RENDERING', payload: false });
     }
   }, [layers, state.isRendering, state.selectedAssets, state.textSettings]);
 
-  // Generate random NFT - clean and simple
-  const generateRandomNFT = useCallback(async () => {
+  // Generate random meme - clean and simple
+  const generateRandomMeme = useCallback(async () => {
     if (state.isGenerating || Object.keys(state.availableAssets).length === 0) {
       return;
     }
@@ -458,15 +499,23 @@ export default function NFTCreator() {
     dispatch({ type: 'SET_SELECTED_ASSETS', payload: newAssets });
     
     // Render with new assets
-    await renderNFT(newAssets);
+    await renderMeme(newAssets);
     
     // Generate and set story
-    const story = generateNFTStory(newAssets);
+    const story = generateMemeStory(newAssets);
     dispatch({ type: 'SET_STORY', payload: story });
     
     dispatch({ type: 'INCREMENT_GENERATION_COUNT' });
     dispatch({ type: 'SET_GENERATING', payload: false });
-  }, [state.availableAssets, state.isGenerating, renderNFT, generateNFTStory]);
+  }, [state.availableAssets, state.isGenerating, renderMeme, generateMemeStory]);
+
+  // Check if current meme is in favorites
+  const isCurrentMemeInFavorites = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const dataUrl = canvas.toDataURL();
+    return state.favorites.includes(dataUrl);
+  };
 
   // Save to favorites
   const addToFavorites = () => {
@@ -480,7 +529,7 @@ export default function NFTCreator() {
   // Share to Twitter
   const shareToTwitter = () => {
     const canvas = canvasRef.current;
-    if (!canvas || !state.nftStory) return;
+    if (!canvas || !state.memeStory) return;
 
     // Convert canvas to blob and create object URL
     canvas.toBlob((blob) => {
@@ -491,11 +540,11 @@ export default function NFTCreator() {
       // Create a temporary link to download the image (Twitter doesn't support direct image upload via URL)
       const link = document.createElement('a');
       link.href = imageUrl;
-      link.download = `die-guys-nft-${Date.now()}.png`;
+      link.download = `die-guys-meme-${Date.now()}.png`;
       link.click();
       
       // Open Twitter with the story text
-      const tweetText = encodeURIComponent(`${state.nftStory}\n\n#DieGuys #NFT #Crypto #Web3 #WAGMI`);
+      const tweetText = encodeURIComponent(`${state.memeStory}\n\n#DieGuys #Meme #Viral #WAGMI`);
       const twitterUrl = `https://twitter.com/intent/tweet?text=${tweetText}`;
       window.open(twitterUrl, '_blank');
       
@@ -535,22 +584,21 @@ export default function NFTCreator() {
     }});
     
     // Render with new assets
-    await renderNFT(newAssets);
+    await renderMeme(newAssets);
     
     // Generate and set story
-    const story = generateNFTStory(newAssets);
+    const story = generateMemeStory(newAssets);
     dispatch({ type: 'SET_STORY', payload: story });
     
-    dispatch({ type: 'INCREMENT_GENERATION_COUNT' });
     dispatch({ type: 'SET_GENERATING', payload: false });
-  }, [state.type, state.isGenerating, state.isRendering, renderNFT, generateNFTStory]);
+  }, [state.type, state.isGenerating, state.isRendering, renderMeme, generateMemeStory]);
 
   // Initial generation on page load only
   useEffect(() => {
     if (Object.keys(state.availableAssets).length > 0 && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       
-      const generateInitialNFT = async () => {
+      const generateInitialMeme = async () => {
         dispatch({ type: 'SET_GENERATING', payload: true });
         
         const newAssets = generateRandomTraits(state.availableAssets);
@@ -558,9 +606,9 @@ export default function NFTCreator() {
         // Update selected assets first
         dispatch({ type: 'SET_SELECTED_ASSETS', payload: newAssets });
         
-        await renderNFT(newAssets);
+        await renderMeme(newAssets);
         
-        const story = generateNFTStory(newAssets);
+        const story = generateMemeStory(newAssets);
         
         // Set loading to false after generation with minimum 1 second delay
         const startTime = Date.now();
@@ -578,9 +626,9 @@ export default function NFTCreator() {
         }, 100);
       };
       
-      generateInitialNFT();
+      generateInitialMeme();
     }
-  }, [state.availableAssets, renderNFT, generateNFTStory]);
+  }, [state.availableAssets, renderMeme, generateMemeStory]);
 
   // Text inputs with onChange that triggers immediate re-render
   const handleTextChange = useCallback((field: keyof TextSettings, value: string | number) => {
@@ -592,18 +640,18 @@ export default function NFTCreator() {
     // Immediate re-render with updated text settings
     if (Object.keys(state.selectedAssets).length > 0 && !state.isRendering) {
       const updatedTextSettings = { ...state.textSettings, [field]: value };
-      console.log('Text changed, re-rendering NFT immediately with updated text:', updatedTextSettings);
-      renderNFT(state.selectedAssets, updatedTextSettings);
+      console.log('Text changed, re-rendering meme immediately with updated text:', updatedTextSettings);
+      renderMeme(state.selectedAssets, updatedTextSettings);
     }
-  }, [state.selectedAssets, state.isRendering, state.textSettings, renderNFT]);
+  }, [state.selectedAssets, state.isRendering, state.textSettings, renderMeme]);
 
-  // Download NFT
-  const downloadNFT = () => {
+  // Download meme
+  const downloadMeme = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const link = document.createElement('a');
-    link.download = `die-guys-${currentType.toLowerCase().replace(' ', '-')}-${Date.now()}.png`;
+    link.download = `die-guys-meme-${currentType.toLowerCase().replace(' ', '-')}-${Date.now()}.png`;
     link.href = canvas.toDataURL();
     link.click();
   };
@@ -621,12 +669,12 @@ export default function NFTCreator() {
     dispatch({ type: 'SELECT_TRAIT', payload: { layer: asset.category, assetPath: asset.path } });
     
     console.log('New assets after selection:', newAssets);
-    await renderNFT(newAssets);
+    await renderMeme(newAssets);
     
     // Generate and set story
-    const story = generateNFTStory(newAssets);
+    const story = generateMemeStory(newAssets);
     dispatch({ type: 'SET_STORY', payload: story });
-  }, [state.selectedAssets, renderNFT, generateNFTStory]);
+  }, [state.selectedAssets, renderMeme, generateMemeStory]);
 
   // Get current asset name
   const getCurrentAssetName = (layer: string): string => {
@@ -736,9 +784,9 @@ export default function NFTCreator() {
                 <span className="inline-block animate-pulse">Die</span>
                 <span className="inline-block animate-pulse mx-2" style={{ animationDelay: '0.2s' }}>Guys</span>
               </h2>
-              <p className="text-2xl mb-4 font-semibold" style={{ color: 'var(--primary)' }}>NFT Creator</p>
+              <p className="text-2xl mb-4 font-semibold" style={{ color: 'var(--primary)' }}>MEME CREATOR</p>
               <div className="flex items-center justify-center gap-2 text-lg" style={{ color: 'var(--text-gray)' }}>
-                <span className="animate-pulse">Generating your first NFT</span>
+                <span className="animate-pulse">Creating your first meme</span>
                 <span className="animate-bounce">.</span>
                 <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
                 <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
@@ -774,7 +822,7 @@ export default function NFTCreator() {
           <div className="w-full lg:w-96 die-guys-card p-4 lg:p-8 h-fit order-2 lg:order-1">
             <div className="text-center mb-6 lg:mb-8">
               <h1 className="text-2xl lg:text-3xl font-bold text-gray-800 mb-2 hover:scale-105 transition-transform duration-300">Die Guys</h1>
-              <h2 className="text-lg lg:text-xl font-semibold mb-3" style={{ color: 'var(--primary)' }}>NFT CREATOR</h2>
+              <h2 className="text-lg lg:text-xl font-semibold mb-3" style={{ color: 'var(--primary)' }}>MEME CREATOR</h2>
               
               {/* Stats Bar */}
               <div className="flex justify-center gap-4 text-sm">
@@ -853,7 +901,7 @@ export default function NFTCreator() {
             {/* Action Buttons */}
             <div className="space-y-3 mb-6">
               <button
-                onClick={generateRandomNFT}
+                onClick={generateRandomMeme}
                 disabled={state.isGenerating || state.isRendering}
                 className="w-full secondary-button flex items-center justify-center space-x-2 disabled:opacity-50"
               >
@@ -875,10 +923,18 @@ export default function NFTCreator() {
                 <div className="flex gap-2">
                   <button
                     onClick={addToFavorites}
-                    className="p-2 bg-white border-2 border-gray-300 hover:border-red-400 rounded-lg transition-all duration-300 hover:scale-110"
-                    title="Add to Favorites"
+                    className={`p-2 bg-white border-2 rounded-lg transition-all duration-300 hover:scale-110 ${
+                      isCurrentMemeInFavorites() 
+                        ? 'border-red-500 text-red-500' 
+                        : 'border-gray-300 hover:border-red-400 text-gray-600 hover:text-red-500'
+                    }`}
+                    title={isCurrentMemeInFavorites() ? "Remove from Favorites" : "Add to Favorites"}
                   >
-                    <Heart size={18} style={{ color: 'var(--secondary)' }} />
+                    <Heart 
+                      size={18} 
+                      fill={isCurrentMemeInFavorites() ? 'currentColor' : 'none'}
+                      style={{ color: isCurrentMemeInFavorites() ? 'var(--secondary)' : 'var(--text-gray)' }} 
+                    />
                   </button>
                   <button
                     onClick={() => dispatch({ type: 'SET_SHOW_STATS', payload: !state.showStats })}
@@ -903,7 +959,7 @@ export default function NFTCreator() {
               {/* Stats Panel */}
               {state.showStats && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-bold text-sm mb-2">Current NFT Stats</h4>
+                  <h4 className="font-bold text-sm mb-2">Current Meme Stats</h4>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>Type: <span className="font-medium">{currentType}</span></div>
                     <div>Layers: <span className="font-medium">{layers.length}</span></div>
@@ -973,19 +1029,24 @@ export default function NFTCreator() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
                   <button
-                    onClick={downloadNFT}
+                    onClick={downloadMeme}
                     className="control-button flex items-center justify-center space-x-2"
                   >
                     <Download size={18} />
-                    <span>Download NFT</span>
+                    <span>Download Meme</span>
                   </button>
                   
                   <button
                     onClick={addToFavorites}
-                    className="secondary-button flex items-center justify-center space-x-2"
+                    className={`secondary-button flex items-center justify-center space-x-2 ${
+                      isCurrentMemeInFavorites() ? 'bg-red-100 border-red-300 text-red-700' : ''
+                    }`}
                   >
-                    <Heart size={18} />
-                    <span>Save Favorite</span>
+                    <Heart 
+                      size={18} 
+                      fill={isCurrentMemeInFavorites() ? 'currentColor' : 'none'}
+                    />
+                    <span>{isCurrentMemeInFavorites() ? 'Remove Favorite' : 'Save Favorite'}</span>
                   </button>
                 </div>
 
@@ -993,10 +1054,10 @@ export default function NFTCreator() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      const updatedTextSettings = { ...state.textSettings, topText: 'DIE GUYS', bottomText: 'NFT' };
+                      const updatedTextSettings = { ...state.textSettings, topText: 'DIE GUYS', bottomText: 'MEME' };
                       console.log('Sample Text clicked, updating to:', updatedTextSettings);
-                      dispatch({ type: 'UPDATE_TEXT', payload: { topText: 'DIE GUYS', bottomText: 'NFT' } });
-                      renderNFT(state.selectedAssets, updatedTextSettings);
+                      dispatch({ type: 'UPDATE_TEXT', payload: { topText: 'DIE GUYS', bottomText: 'MEME' } });
+                      renderMeme(state.selectedAssets, updatedTextSettings);
                     }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
@@ -1007,7 +1068,7 @@ export default function NFTCreator() {
                       const updatedTextSettings = { ...state.textSettings, topText: '', bottomText: '' };
                       console.log('Clear Text clicked, updating to:', updatedTextSettings);
                       dispatch({ type: 'UPDATE_TEXT', payload: { topText: '', bottomText: '' } });
-                      renderNFT(state.selectedAssets, updatedTextSettings);
+                      renderMeme(state.selectedAssets, updatedTextSettings);
                     }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
@@ -1017,27 +1078,27 @@ export default function NFTCreator() {
               </div>
             </div>
 
-            {/* NFT Story & Sharing */}
-            {state.nftStory && (
+            {/* Meme Story & Sharing */}
+            {state.memeStory && (
               <div className="die-guys-card p-4 lg:p-8 space-y-4">
                 <div className="text-center mb-4">
                   <h3 className="text-lg lg:text-xl font-bold text-gray-800 flex items-center justify-center gap-2">
                     <Sparkles size={18} style={{ color: 'var(--tertiary)' }} />
-                    Die Guys Story
+                    Die Guys Meme Story
                   </h3>
-                  <span className="text-sm text-gray-500">Auto-generated based on your NFT</span>
+                  <span className="text-sm text-gray-500">Auto-generated based on your meme</span>
                 </div>
 
                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 lg:p-6 rounded-xl border-2 border-purple-200">
                   <p className="text-gray-800 leading-relaxed font-medium text-center italic text-sm lg:text-base">
-                    &quot;{state.nftStory}&quot;
+                    &quot;{state.memeStory}&quot;
                   </p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button
                     onClick={() => {
-                      const story = generateNFTStory();
+                      const story = generateMemeStory();
                       dispatch({ type: 'SET_STORY', payload: story });
                     }}
                     className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 hover:scale-105"
@@ -1056,7 +1117,7 @@ export default function NFTCreator() {
                 </div>
 
                 <p className="text-xs text-gray-500 text-center">
-                  Clicking &quot;Share on X&quot; will download your NFT and open Twitter with the story
+                  Clicking &quot;Share on X&quot; will download your meme and open Twitter with the story
                 </p>
               </div>
             )}
@@ -1082,7 +1143,7 @@ export default function NFTCreator() {
                 className="w-16 h-16 rounded-lg object-cover border-2 border-gray-200 hover:border-purple-400 transition-all duration-300 hover:scale-110 cursor-pointer"
                 onClick={() => {
                   const link = document.createElement('a');
-                  link.download = `die-guys-favorite-${index + 1}-${Date.now()}.png`;
+                  link.download = `die-guys-meme-favorite-${index + 1}-${Date.now()}.png`;
                   link.href = fav;
                   link.click();
                 }}
@@ -1145,12 +1206,12 @@ export default function NFTCreator() {
         <div className="max-w-4xl mx-auto">
           <div className="flex justify-center gap-8 mb-6">
             <div className="text-center">
-              <div className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>{state.generationCount}</div>
-              <div className="text-xs text-gray-500">NFTs Generated</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>{state.favorites.length}</div>
+              <div className="text-xs text-gray-500">Your Favorites</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold" style={{ color: 'var(--secondary)' }}>{state.favorites.length}</div>
-              <div className="text-xs text-gray-500">Favorites Saved</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--secondary)' }}>{state.generationCount}</div>
+              <div className="text-xs text-gray-500">Your Memes</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold" style={{ color: 'var(--tertiary)' }}>{Object.keys(state.availableAssets).reduce((acc, layer) => acc + (state.availableAssets[layer]?.length || 0), 0)}</div>
@@ -1159,7 +1220,7 @@ export default function NFTCreator() {
           </div>
           
           <p className="text-sm text-gray-500 mb-4">
-            Die Guys NFT Creator • Built with Next.js & Canvas API • Made with 💜 by <a href="https://x.com/0x_groot">Groot</a>
+            Die Guys Meme Creator • Built with Next.js & Canvas API • Made with 💜 by <a href="https://x.com/0x_groot">Groot</a>
           </p>
           
           <div className="flex justify-center gap-4">

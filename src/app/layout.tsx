@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Die Guys NFT Creator",
-  description: "Create custom Die Guys NFTs with layered assets and text overlays",
+  title: "Die Guys Meme Creator",
+  description: "Create custom Die Guys memes with layered assets and text overlays",
 };
 
 export default function RootLayout({
