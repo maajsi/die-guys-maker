@@ -350,7 +350,7 @@ export default function NFTCreator() {
   }, [currentType, layers]);
 
   // Optimized render function - no flickering
-  const renderNFT = useCallback(async (assets: Record<string, string> = state.selectedAssets) => {
+  const renderNFT = useCallback(async (assets: Record<string, string> = state.selectedAssets, textSettings: TextSettings = state.textSettings) => {
     const canvas = canvasRef.current;
     if (!canvas || state.isRendering || Object.keys(assets).length === 0) {
       console.log('Skipping render - canvas:', !!canvas, 'isRendering:', state.isRendering, 'assets length:', Object.keys(assets).length);
@@ -358,6 +358,7 @@ export default function NFTCreator() {
     }
 
     console.log('Rendering NFT with assets:', assets);
+    console.log('Rendering with text settings:', { topText: textSettings.topText, bottomText: textSettings.bottomText, fontSize: textSettings.fontSize, preset: textSettings.preset });
     dispatch({ type: 'SET_RENDERING', payload: true });
     
     try {
@@ -400,29 +401,31 @@ export default function NFTCreator() {
       });
 
       // Add text with dynamic positioning
-      const currentPreset = FONT_PRESETS.find(p => p.name === state.textSettings.preset) || FONT_PRESETS[0];
+      const currentPreset = FONT_PRESETS.find(p => p.name === textSettings.preset) || FONT_PRESETS[0];
       
-      if (state.textSettings.topText || state.textSettings.bottomText) {
-        offscreenCtx.font = `bold ${state.textSettings.fontSize}px ${currentPreset.font}`;
+      if (textSettings.topText || textSettings.bottomText) {
+        offscreenCtx.font = `bold ${textSettings.fontSize}px ${currentPreset.font}`;
         offscreenCtx.fillStyle = '#FFFFFF';
         offscreenCtx.strokeStyle = '#000000';
-        offscreenCtx.lineWidth = Math.max(2, state.textSettings.fontSize / 20); // Dynamic stroke width
+        offscreenCtx.lineWidth = Math.max(2, textSettings.fontSize / 20); // Dynamic stroke width
         offscreenCtx.textAlign = 'center';
 
         // Dynamic positioning based on font size
-        const topMargin = Math.max(15, state.textSettings.fontSize * 0.6); // At least 15px from top
-        const bottomMargin = Math.max(15, state.textSettings.fontSize * 0.4); // At least 15px from bottom
+        const topMargin = Math.max(15, textSettings.fontSize * 0.6); // At least 15px from top
+        const bottomMargin = Math.max(15, textSettings.fontSize * 0.4); // At least 15px from bottom
 
-        if (state.textSettings.topText) {
-          const topY = topMargin + (state.textSettings.fontSize * 0.8); // Position text baseline properly
-          offscreenCtx.strokeText(state.textSettings.topText, offscreenCanvas.width / 2, topY);
-          offscreenCtx.fillText(state.textSettings.topText, offscreenCanvas.width / 2, topY);
+        if (textSettings.topText) {
+          const topY = topMargin + (textSettings.fontSize * 0.8); // Position text baseline properly
+          console.log(`Rendering top text: "${textSettings.topText}" at position ${topY}`);
+          offscreenCtx.strokeText(textSettings.topText, offscreenCanvas.width / 2, topY);
+          offscreenCtx.fillText(textSettings.topText, offscreenCanvas.width / 2, topY);
         }
 
-        if (state.textSettings.bottomText) {
+        if (textSettings.bottomText) {
           const bottomY = offscreenCanvas.height - bottomMargin; // Position from bottom
-          offscreenCtx.strokeText(state.textSettings.bottomText, offscreenCanvas.width / 2, bottomY);
-          offscreenCtx.fillText(state.textSettings.bottomText, offscreenCanvas.width / 2, bottomY);
+          console.log(`Rendering bottom text: "${textSettings.bottomText}" at position ${bottomY}`);
+          offscreenCtx.strokeText(textSettings.bottomText, offscreenCanvas.width / 2, bottomY);
+          offscreenCtx.fillText(textSettings.bottomText, offscreenCanvas.width / 2, bottomY);
         }
       }
 
@@ -581,15 +584,16 @@ export default function NFTCreator() {
 
   // Text inputs with onChange that triggers immediate re-render
   const handleTextChange = useCallback((field: keyof TextSettings, value: string | number) => {
+    console.log(`Text changed - ${field}: "${value}"`);
+    
+    // Update state first
     dispatch({ type: 'UPDATE_TEXT', payload: { [field]: value } });
     
-    // Immediate re-render with updated text
+    // Immediate re-render with updated text settings
     if (Object.keys(state.selectedAssets).length > 0 && !state.isRendering) {
-      const newTextSettings = { ...state.textSettings, [field]: value };
-      console.log('Text changed, re-rendering NFT immediately');
-      setTimeout(() => {
-        renderNFT(state.selectedAssets);
-      }, 0);
+      const updatedTextSettings = { ...state.textSettings, [field]: value };
+      console.log('Text changed, re-rendering NFT immediately with updated text:', updatedTextSettings);
+      renderNFT(state.selectedAssets, updatedTextSettings);
     }
   }, [state.selectedAssets, state.isRendering, state.textSettings, renderNFT]);
 
@@ -989,8 +993,10 @@ export default function NFTCreator() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
+                      const updatedTextSettings = { ...state.textSettings, topText: 'DIE GUYS', bottomText: 'NFT' };
+                      console.log('Sample Text clicked, updating to:', updatedTextSettings);
                       dispatch({ type: 'UPDATE_TEXT', payload: { topText: 'DIE GUYS', bottomText: 'NFT' } });
-                      setTimeout(() => renderNFT(state.selectedAssets), 0);
+                      renderNFT(state.selectedAssets, updatedTextSettings);
                     }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
@@ -998,8 +1004,10 @@ export default function NFTCreator() {
                   </button>
                   <button
                     onClick={() => {
+                      const updatedTextSettings = { ...state.textSettings, topText: '', bottomText: '' };
+                      console.log('Clear Text clicked, updating to:', updatedTextSettings);
                       dispatch({ type: 'UPDATE_TEXT', payload: { topText: '', bottomText: '' } });
-                      setTimeout(() => renderNFT(state.selectedAssets), 0);
+                      renderNFT(state.selectedAssets, updatedTextSettings);
                     }}
                     className="flex-1 text-xs py-2 px-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-300"
                   >
